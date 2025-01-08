@@ -1,31 +1,8 @@
 %% @author Gaurav Kumar <gauravkumar552@gmail.com>
 
 -module(db_migration).
-
--export([start_mnesia/0,
-	 get_base_revision/0,
-	 create_migration_file/1,
-	 create_migration_file/0,
-	 init_migrations/0,
-	 get_current_head/0,
-	 read_config/0,
-	 find_pending_migrations/0,
-	 apply_upgrades/0,
-	 get_revision_tree/0,
-	 get_applied_head/0,
-	 detect_conflicts_post_migration/1,
-	 apply_downgrades/1,
-	 detect_revision_sequence_conflicts/0
-	]).
-
--ifdef(TEST).
--export([get_migration_source_filepath/0,
-	 get_migration_beam_filepath/0,
-   get_next_revision/1,
-   get_prev_revision/1,
-   get_count_between_2_revisions/2
-	]).
--endif.
+-compile(export_all).
+-compile(nowarn_export_all).
 
 -define(TABLE, schema_migrations).
 
@@ -95,29 +72,22 @@ find_pending_migrations() ->
 %% Functions related to migration creation
 %%
 
-create_migration_file(CommitMessage) ->
-    erlydtl:compile(code:lib_dir(mnesia_migrate) ++ "/schema.template", migration_template),
-    NewRevisionId = string:substr(uuid:to_string(uuid:uuid4()),1,8),
-    OldRevisionId = get_current_head(),
-    Filename = NewRevisionId ++ "_" ++ string:substr(CommitMessage, 1, 20) ,
-    {ok, Data} = migration_template:render([{new_rev_id , NewRevisionId}, {old_rev_id, OldRevisionId},
-					  {modulename, Filename}, {tabtomig, []},
-					  {commitmessage, CommitMessage}]),
-    file:write_file(get_migration_source_filepath() ++ Filename ++ ".erl", Data),
-    print("New file created ~p~n", [Filename ++ ".erl"]),
-    get_migration_source_filepath() ++ Filename ++ ".erl".
+create_migration_file(_CommitMessage) ->
+    io:format("----------------------------------------------------------------------------------------------------------------------~n"),
+    io:format("----------------------------------------------------------------------------------------------------------------------~n"),
+    io:format("  ~s~n~n~n", [color:p("NOTE: Using `mnesia_migrate` to create migrations is no longer allowed. Please use the following method instead:- ", [bold, red])]),
+    io:format("  ~s~n", [color:p("- For GMC Application: ", [bold, green])]),
+    io:format("    ~s~n~n", [color:p("mhs_setup:create_migration_file().", [bold, blue])]),
+    io:format("  ~s~n", [color:p("- For GMR Applications (pick, put, audit, station, etc): ", [bold, green])]),
+    io:format("    ~s~n~n", [color:p("gmr_setup:create_migration_file().", [bold, blue])]),
+    io:format("  ~s~n", [color:p("- For Butler Base/Shared Application: ", [bold, green])]),
+    io:format("    ~s~n~n", [color:p("butler_base_setup:create_migration_file().", [bold, blue])]),
+    io:format("  ~s~n", [color:p("The above methods uses https://github.com/greyorange-labs/erl_migrate ", [bold, yellow])]),
+    io:format("----------------------------------------------------------------------------------------------------------------------~n"),
+    io:format("----------------------------------------------------------------------------------------------------------------------~n").
 
 create_migration_file() ->
-    erlydtl:compile(code:lib_dir(mnesia_migrate) ++ "/schema.template", migration_template),
-    NewRevisionId = "a" ++ string:substr(uuid:to_string(uuid:uuid4()),1,8),
-    OldRevisionId = get_current_head(),
-    Filename = NewRevisionId ++ "_migration" ,
-    {ok, Data} = migration_template:render([{new_rev_id , NewRevisionId}, {old_rev_id, OldRevisionId},
-					  {modulename, Filename}, {tabtomig, []},
-					  {commitmessage, "migration"}]),
-    file:write_file(get_migration_source_filepath() ++ Filename ++ ".erl", Data),
-    print("New file created ~p~n", [Filename ++ ".erl"]),
-    get_migration_source_filepath() ++ Filename ++ ".erl".
+    create_migration_file("None").
 
 
 %%
