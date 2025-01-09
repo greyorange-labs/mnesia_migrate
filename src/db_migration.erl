@@ -1,5 +1,4 @@
 %% @author Gaurav Kumar <gauravkumar552@gmail.com>
-
 -module(db_migration).
 -compile(export_all).
 -compile(nowarn_export_all).
@@ -167,15 +166,18 @@ update_head(Head) ->
         end
     end).
 
-%%
 %% Post migration validations
-%%
-
--spec detect_conflicts_post_migration([{tuple(), list()}]) -> list().
-detect_conflicts_post_migration(Models) ->
-    ConflictingTables = [TableName || {TableName, Options} <- Models , proplists:get_value(attributes, Options) /= mnesia:table_info(TableName, attributes)],
-    print("Tables having conflicts in structure after applying migrations: ~p~n", [ConflictingTables]),
-    ConflictingTables.
+-spec get_dangling_migrations() -> DanglingMigrationList :: list(atom()).
+get_dangling_migrations() ->
+    RevisionTreeMigrationList = db_migration:get_revision_tree(),
+    MigrationFiles = filelib:wildcard(
+        application:get_env(mnesia_migrate, migration_beam_dir, "ebin/") ++ "*_migration.beam"
+    ),
+    MigrationList = [
+        list_to_atom(filename:basename(MigrationFile, "_migration.beam"))
+     || MigrationFile <- MigrationFiles
+    ],
+    MigrationList -- RevisionTreeMigrationList.
 
 
 %%
