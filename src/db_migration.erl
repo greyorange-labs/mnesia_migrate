@@ -327,7 +327,7 @@ get_dangling_migrations() ->
     ],
     MigrationList -- RevisionTreeMigrationList.
 
--spec detect_revision_sequence_conflicts() -> [].
+-spec detect_revision_sequence_conflicts() -> list().
 detect_revision_sequence_conflicts() ->
     Tree = get_revision_tree(),
     Modulelist = filelib:wildcard(get_migration_beam_filepath() ++ "*_migration.beam"),
