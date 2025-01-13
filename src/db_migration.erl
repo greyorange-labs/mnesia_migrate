@@ -90,11 +90,11 @@ create_migration_file(_CommitMessage) ->
         )
     ]),
     io:format("  ~s~n", [color:p("- For GMC Application: ", [bold, green])]),
-    io:format("    ~s~n~n", [color:p("mhs_setup:create_migration_file().", [bold, blue])]),
+    io:format("    ~s~n~n", [color:p("gmc_db_setup:create_migration_file().", [bold, blue])]),
     io:format("  ~s~n", [color:p("- For GMR Applications (pick, put, audit, station, etc): ", [bold, green])]),
-    io:format("    ~s~n~n", [color:p("gmr_setup:create_migration_file().", [bold, blue])]),
+    io:format("    ~s~n~n", [color:p("gmr_db_setup:create_migration_file().", [bold, blue])]),
     io:format("  ~s~n", [color:p("- For Butler Base/Shared Application: ", [bold, green])]),
-    io:format("    ~s~n~n", [color:p("butler_base_setup:create_migration_file().", [bold, blue])]),
+    io:format("    ~s~n~n", [color:p("gm_base_db_setup:create_migration_file().", [bold, blue])]),
     io:format("  ~s~n", [color:p("The above methods uses https://github.com/greyorange-labs/erl_migrate ", [bold, yellow])]),
     io:format(
         "----------------------------------------------------------------------------------------------------------------------~n"
