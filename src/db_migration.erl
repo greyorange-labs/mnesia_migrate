@@ -20,13 +20,11 @@ init_migrations() ->
         true ->
             ok;
         false ->
-            print("Table schema_migration not found, creating...~n", []),
             Attr = [{disc_copies, [node()]}, {attributes, record_info(fields, schema_migrations)}],
             case mnesia:create_table(?TABLE, Attr) of
                 {atomic, ok} ->
-                    print(" => created~n", []);
+                    ok;
                 {aborted, Reason} ->
-                    print("mnesia create table error: ~p~n", [Reason]),
                     throw({error, Reason})
             end
     end,
@@ -35,6 +33,7 @@ init_migrations() ->
 
 -spec run_migrations() -> ok.
 run_migrations() ->
+    print("~p: Applying migrations.........", [?MODULE]),
     case get_dangling_migrations() of
         [] ->
             CurrentHead = get_current_head(),
@@ -44,14 +43,12 @@ run_migrations() ->
             print("Migrations to apply: ~p~n", [PendingMigrations]),
             case PendingMigrations of
                 [] ->
-                    print("No migrations pending"),
-                    {false, undefined};
+                    ok;
                 _PendingMigrations ->
-                    print("Applying mnesia migrations."),
-                    {ok, applied} = apply_upgrades()
+                    {ok, applied} = apply_upgrades(PendingMigrations)
             end;
         DanglingMigrations ->
-            print("Error!!! Dangling migrations found: ~p", [DanglingMigrations]),
+            print("~Error!!! ~p: Dangling migrations found: ~p", [?MODULE, DanglingMigrations]),
             exit("Dangling migrations found")
     end,
     ok.
@@ -68,14 +65,12 @@ get_revision_tree() ->
     BaseRev = get_base_revision(),
     List1 = [],
     RevList = append_revision_tree(List1, BaseRev),
-    print("RevList ~p~n", [RevList]),
     RevList.
 
 get_down_revision_tree() ->
     BaseRev = get_applied_head(),
     List1 = [],
     RevList = append_down_revision_tree(List1, BaseRev),
-    print("RevList ~p~n", [RevList]),
     RevList.
 
 find_pending_migrations() ->
@@ -92,7 +87,6 @@ find_pending_migrations() ->
                     NextId -> append_revision_tree([], NextId)
                 end
         end,
-    print("Revisions needing migration : ~p~n", [RevList]),
     RevList.
 
 %%
@@ -133,22 +127,21 @@ create_migration_file() ->
 %% Functions related to applying migrations
 %%
 
-apply_upgrades() ->
-    RevList = find_pending_migrations(),
-    case RevList of
+apply_upgrades(PendingMigrations) ->
+    case PendingMigrations of
         [] ->
-            print("No pending revision found ~n", []);
+            ok;
         _ ->
             lists:foreach(
                 fun(RevId) ->
                     ModuleName = list_to_atom(atom_to_list(RevId) ++ "_migration"),
-                    print("Running upgrade ~p -> ~p ~n", [ModuleName:get_prev_rev(), ModuleName:get_current_rev()]),
+                    print("Applying migration: ~p~n", [RevId]),
                     ModuleName:up(),
                     update_head(RevId)
                 end,
-                RevList
+                PendingMigrations
             ),
-            print("all upgrades successfully applied.~n", [])
+            print("~p: All pending migration successfully applied.", [?MODULE])
     end,
     {ok, applied}.
 
@@ -207,7 +200,6 @@ get_applied_head() ->
                 Rec = hd(KeyList),
                 Rec#schema_migrations.curr_head
         end,
-    print("current applied head is : ~p~n", [Head]),
     Head.
 
 update_head(Head) ->
@@ -230,7 +222,7 @@ detect_conflicts_post_migration(Models) ->
         TableName
      || {TableName, Options} <- Models, proplists:get_value(attributes, Options) /= mnesia:table_info(TableName, attributes)
     ],
-    print("Tables having conflicts in structure after applying migrations: ~p~n", [ConflictingTables]),
+    print("~p: Tables having conflicts in structure after applying migrations: ~p~n", [?MODULE, ConflictingTables]),
     ConflictingTables.
 
 %%
@@ -263,7 +255,6 @@ get_base_revision() ->
         Modulelist
     ),
     BaseModuleName = list_to_atom(filename:basename(Res, ".beam")),
-    print("Base Rev module is ~p~n", [BaseModuleName]),
     case Res of
         [] -> none;
         _ -> BaseModuleName:get_current_rev()
