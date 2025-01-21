@@ -33,6 +33,29 @@ init_migrations() ->
     TimeOut = application:get_env(mnesia_migrate, table_load_timeout, 10000),
     ok = mnesia:wait_for_tables([?TABLE], TimeOut).
 
+-spec run_migrations() -> ok.
+run_migrations() ->
+    case get_dangling_migrations() of
+        [] ->
+            CurrentHead = get_current_head(),
+            CurrentAppliedHead = get_applied_head(),
+            print("Current head = ~p, Current applied head = ~p", [CurrentHead, CurrentAppliedHead]),
+            PendingMigrations = find_pending_migrations(),
+            print("Migrations to apply: ~p", [PendingMigrations]),
+            case PendingMigrations of
+                [] ->
+                    print("No migrations pending"),
+                    {false, undefined};
+                _PendingMigrations ->
+                    print("Applying mnesia migrations."),
+                    {ok, applied} = apply_upgrades()
+            end;
+        DanglingMigrations ->
+            print("Error!!! Dangling migrations found: ~p", [DanglingMigrations]),
+            exit("Dangling migrations found")
+    end,
+    ok.
+
 %%
 %%Functions related to migration info
 %%
@@ -308,8 +331,11 @@ get_count_between_2_revisions(RevStart, RevEnd) ->
     Count = string:str(RevList, [RevEnd]) - string:str(RevList, [RevStart]),
     Count.
 
+print(Statement) ->
+    print(Statement, []).
+
 print(Statement, Arg) ->
-    case application:get_env(mnesia_migrate, verbose, false) of
+    case application:get_env(mnesia_migrate, verbose, true) of
         true -> io:format(Statement, Arg);
         false -> ok
     end.
