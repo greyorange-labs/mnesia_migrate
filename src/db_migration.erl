@@ -39,9 +39,9 @@ run_migrations() ->
         [] ->
             CurrentHead = get_current_head(),
             CurrentAppliedHead = get_applied_head(),
-            print("Current head = ~p, Current applied head = ~p", [CurrentHead, CurrentAppliedHead]),
+            print("Current head = ~p, Current applied head = ~p~n", [CurrentHead, CurrentAppliedHead]),
             PendingMigrations = find_pending_migrations(),
-            print("Migrations to apply: ~p", [PendingMigrations]),
+            print("Migrations to apply: ~p~n", [PendingMigrations]),
             case PendingMigrations of
                 [] ->
                     print("No migrations pending"),
@@ -336,7 +336,7 @@ print(Statement) ->
 
 print(Statement, Arg) ->
     case application:get_env(mnesia_migrate, verbose, true) of
-        true -> io:format(Statement, Arg);
+        true -> io:format(Statement ++ "~n", Arg);
         false -> ok
     end.
 
