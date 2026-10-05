@@ -90,19 +90,19 @@ mnesia_migration_test_() ->
              ?assertError(test3_fail, db_migration:run_migrations()),
              ?assertEqual(test2, db_migration:get_applied_head()),
              Last = db_migration:get_last_migration_run(),
-             ?assertEqual(test3, element(5, Last)),
-             ?assertEqual(failed, element(7, Last)),
-?assertEqual({error, test3_fail}, element(10, Last)),
-            ?assertNotEqual(undefined, element(11, Last)),
+             ?assertEqual(test3, element(4, Last)),
+             ?assertEqual(failed, element(6, Last)),
+?assertEqual({error, test3_fail}, element(9, Last)),
+            ?assertNotEqual(undefined, element(10, Last)),
              %% Retry: only the failing revision is re-attempted, applied
              %% revisions are never re-run
              Test1RowsCount =
-                 length([R || R <- db_migration:get_run_log(), element(5, R) =:= test1]),
+                 length([R || R <- db_migration:get_run_log(), element(4, R) =:= test1]),
              ?assertError(test3_fail, db_migration:run_migrations()),
              ?assertEqual(test2, db_migration:get_applied_head()),
              ?assertEqual(
                  Test1RowsCount,
-                 length([R || R <- db_migration:get_run_log(), element(5, R) =:= test1]),
+                 length([R || R <- db_migration:get_run_log(), element(4, R) =:= test1]),
                  "test1 must not be re-executed"
              ),
              %% Fix the failure and apply
@@ -110,13 +110,13 @@ mnesia_migration_test_() ->
              ?assertEqual(ok, db_migration:run_migrations()),
              ?assertEqual(test3, db_migration:get_applied_head()),
              LastOk = db_migration:get_last_migration_run(),
-             ?assertEqual(test3, element(5, LastOk)),
-             ?assertEqual(ok, element(7, LastOk)),
+             ?assertEqual(test3, element(4, LastOk)),
+             ?assertEqual(ok, element(6, LastOk)),
              %% Downgrade direction is recorded too
              ?assertEqual(ok, db_migration:apply_downgrades(1)),
              LastDn = db_migration:get_last_migration_run(),
-?assertEqual(test3, element(5, LastDn)),
-            ?assertEqual(down, element(6, LastDn)),
+?assertEqual(test3, element(4, LastDn)),
+            ?assertEqual(down, element(5, LastDn)),
              application:unset_env(mnesia_migrate, fail_test3)
          end}
        ]}]

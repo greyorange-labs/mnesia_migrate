@@ -5,14 +5,13 @@
 -compile(nowarn_export_all).
 
 -define(TABLE, schema_migrations).
--define(RUN_TABLE, mnesia_migration_runs).
+-define(RUN_TABLE, db_migration_runs).
 
 -record(schema_migrations, {prime_key = null, curr_head = null}).
 
--record(mnesia_migration_runs, {
-    id :: {MigrationName :: atom(), AttemptTs :: integer()},
-    schema_name :: any(),
-    schema_instance :: any(),
+-record(db_migration_runs, {
+    id :: {Tag :: any(), MigrationName :: atom(), AttemptTs :: integer()},
+    tag :: any(),
     migration_name :: atom(),
     direction :: up | down,
     status :: running | ok | failed,
@@ -49,7 +48,7 @@ init_migrations() ->
         false ->
             RunAttr = [
                 {disc_copies, [node()]},
-                {attributes, record_info(fields, mnesia_migration_runs)}
+                {attributes, record_info(fields, db_migration_runs)}
             ],
             case mnesia:create_table(?RUN_TABLE, RunAttr) of
                 {atomic, ok} ->
@@ -216,7 +215,7 @@ apply_downgrades(DownNum) ->
     ModuleName :: module()
 ) -> ok.
 run_revision(Direction, RevId, ModuleName) ->
-    Args = #{schema_name => legacy, schema_instance => legacy},
+    Args = #{},
     AttemptTs = erlang:system_time(microsecond),
     StartedAt = get_current_time(),
     ok = write_run_log(RevId, Args, Direction, running, AttemptTs, StartedAt, undefined, undefined, undefined),
@@ -250,14 +249,12 @@ run_revision(Direction, RevId, ModuleName) ->
     ErrorReason :: {Class :: atom(), Reason :: any()} | undefined,
     StackTrace :: binary() | undefined
 ) -> ok.
-write_run_log(RevId, Args, Direction, Status, AttemptTs, StartedAt, FinishedAt, ErrorReason, StackTrace) ->
-    SchemaName = maps:get(schema_name, Args),
-    SchemaInstance = maps:get(schema_instance, Args),
-    Id = {RevId, AttemptTs},
-    Rec = #mnesia_migration_runs{
+write_run_log(RevId, _Args, Direction, Status, AttemptTs, StartedAt, FinishedAt, ErrorReason, StackTrace) ->
+    Tag = application:get_env(mnesia_migrate, run_tag, legacy),
+    Id = {Tag, RevId, AttemptTs},
+    Rec = #db_migration_runs{
         id = Id,
-        schema_name = SchemaName,
-        schema_instance = SchemaInstance,
+        tag = Tag,
         migration_name = RevId,
         direction = Direction,
         status = Status,
@@ -289,9 +286,9 @@ notify_observer(Callback, Args, Payload) ->
 format_stacktrace(Stack) ->
     iolist_to_binary(io_lib:format("~p", [Stack])).
 
--spec get_last_migration_run() -> #mnesia_migration_runs{} | none.
+-spec get_last_migration_run() -> #db_migration_runs{} | none.
 get_last_migration_run() ->
-    Rows = mnesia:dirty_match_object(?RUN_TABLE, #mnesia_migration_runs{_ = '_'}),
+    Rows = mnesia:dirty_match_object(?RUN_TABLE, #db_migration_runs{tag = run_tag(), _ = '_'}),
     case Rows of
         [] ->
             none;
@@ -308,11 +305,14 @@ get_last_migration_run() ->
             )
     end.
 
--spec get_run_log() -> list(#mnesia_migration_runs{}).
+-spec get_run_log() -> list(#db_migration_runs{}).
 get_run_log() ->
-    mnesia:dirty_match_object(?RUN_TABLE, #mnesia_migration_runs{_ = '_'}).
+    mnesia:dirty_match_object(?RUN_TABLE, #db_migration_runs{tag = run_tag(), _ = '_'}).
 
-attempt_ts(#mnesia_migration_runs{id = {_RevId, AttemptTs}}) ->
+run_tag() ->
+    application:get_env(mnesia_migrate, run_tag, legacy).
+
+attempt_ts(#db_migration_runs{id = {_Tag, _RevId, AttemptTs}}) ->
     AttemptTs.
 
 append_revision_tree(List1, RevId) ->
