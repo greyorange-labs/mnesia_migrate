@@ -18,3 +18,29 @@ A tool to upgrade/downgrade schema and migrate data between different versions o
 # License
 
 MIT License
+
+## Run observability
+
+Every migration attempt is recorded in the `mnesia_migration_runs` Mnesia table
+(direction, status `running -> ok | failed`, timestamps, error reason/stacktrace,
+node) in addition to the head row in `schema_migrations`.
+
+```erlang
+%% Last attempt (record | none)
+db_migration:get_last_migration_run().
+
+%% All recorded attempts (list of records)
+db_migration:get_run_log().
+```
+
+Failures are recorded and reported before the error re-raises, and the head is
+only advanced after a successful `up()`, so a retry re-attempts only the
+failing revision.
+
+### Custom observer (optional)
+
+Set `{run_log_observer, Module}` under `mnesia_migrate` app env to receive the
+same callbacks as the `erl_migrate` `migration_observer` contract
+(`on_revision_start/4`, `on_revision_ok/5`, `on_revision_failed/6`,
+`on_run_finished/4`), with `schema_name`/`schema_instance` fixed to `legacy`.
+Observer failures never affect the migration itself.
