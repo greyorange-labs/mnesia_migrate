@@ -215,7 +215,7 @@ apply_downgrades(DownNum) ->
     ModuleName :: module()
 ) -> ok.
 run_revision(Direction, RevId, ModuleName) ->
-    Args = #{},
+    Args = #{schema_name => legacy, schema_instance => legacy},
     AttemptTs = erlang:system_time(microsecond),
     StartedAt = get_current_time(),
     ok = write_run_log(RevId, Args, Direction, running, AttemptTs, StartedAt, undefined, undefined, undefined),
@@ -224,7 +224,7 @@ run_revision(Direction, RevId, ModuleName) ->
     try
         ModuleName:up(),
         FinishMs = erlang:monotonic_time(millisecond) - StartMs,
-        ok = write_run_log(RevId, Args, Direction, ok, AttemptTs, StartedAt, FinishMs, undefined, undefined),
+        ok = write_run_log(RevId, Args, Direction, ok, AttemptTs, StartedAt, get_current_time(), undefined, undefined),
         notify_observer(on_revision_ok, Args, [RevId, FinishMs]),
         ok
     catch
@@ -232,7 +232,7 @@ run_revision(Direction, RevId, ModuleName) ->
             FailMs = erlang:monotonic_time(millisecond) - StartMs,
             StackTrace = format_stacktrace(Stack),
             ok = write_run_log(
-                RevId, Args, Direction, failed, AttemptTs, StartedAt, FailMs, {Class, Reason}, StackTrace
+                RevId, Args, Direction, failed, AttemptTs, StartedAt, get_current_time(), {Class, Reason}, StackTrace
             ),
             notify_observer(on_revision_failed, Args, [RevId, FailMs, {Class, Reason, Stack}]),
             erlang:raise(Class, Reason, Stack)
