@@ -174,7 +174,8 @@ apply_upgrades(PendingMigrations) ->
                 end,
                 PendingMigrations
             ),
-            print("~p: All pending migration successfully applied.", [?MODULE])
+            print("~p: All pending migration successfully applied.", [?MODULE]),
+            notify_observer(on_run_finished, #{schema_name => legacy, schema_instance => legacy}, [{ok, applied}])
     end,
     {ok, applied}.
 
