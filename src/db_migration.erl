@@ -5,8 +5,22 @@
 -compile(nowarn_export_all).
 
 -define(TABLE, schema_migrations).
+-define(RUN_TABLE, db_migration_runs).
 
 -record(schema_migrations, {prime_key = null, curr_head = null}).
+
+-record(db_migration_runs, {
+    id :: {Tag :: any(), MigrationName :: atom(), AttemptTs :: integer()},
+    tag :: any(),
+    migration_name :: atom(),
+    direction :: up | down,
+    status :: running | ok | failed,
+    started_at :: calendar:local_time(),
+    finished_at :: calendar:local_time() | undefined,
+    error_reason :: {Class :: atom(), Reason :: any()} | undefined,
+    stacktrace :: binary() | undefined,
+    node :: node()
+}).
 
 read_config() ->
     Val = application:get_env(mnesia_migrate, migration_dir, "~/project/mnesia_migrate/src/migrations/"),
@@ -28,8 +42,26 @@ init_migrations() ->
                     throw({error, Reason})
             end
     end,
+    case lists:member(?RUN_TABLE, mnesia:system_info(tables)) of
+        true ->
+            ok;
+        false ->
+            RunAttr = [
+                {disc_copies, [node()]},
+                {attributes, record_info(fields, db_migration_runs)}
+            ],
+            case mnesia:create_table(?RUN_TABLE, RunAttr) of
+                {atomic, ok} ->
+                    ok;
+                {aborted, RunReason} ->
+                    throw({error, RunReason})
+            end
+    end,
     TimeOut = application:get_env(mnesia_migrate, table_load_timeout, 10000),
-    ok = mnesia:wait_for_tables([?TABLE], TimeOut).
+    ok = mnesia:wait_for_tables([?TABLE, ?RUN_TABLE], TimeOut).
+
+get_current_time() ->
+    calendar:local_time().
 
 -spec run_migrations() -> ok.
 run_migrations() ->
@@ -137,12 +169,13 @@ apply_upgrades(PendingMigrations) ->
                 fun(RevId) ->
                     ModuleName = list_to_atom(atom_to_list(RevId) ++ "_migration"),
                     print("Applying migration: ~p", [RevId]),
-                    ModuleName:up(),
+                    ok = run_revision(up, RevId, ModuleName),
                     update_head(RevId)
                 end,
                 PendingMigrations
             ),
-            print("~p: All pending migration successfully applied.", [?MODULE])
+            print("~p: All pending migration successfully applied.", [?MODULE]),
+            notify_observer(on_run_finished, #{schema_name => legacy, schema_instance => legacy}, [{ok, applied}])
     end,
     {ok, applied}.
 
@@ -164,7 +197,7 @@ apply_downgrades(DownNum) ->
                         fun(RevId) ->
                             ModuleName = list_to_atom(atom_to_list(RevId) ++ "_migration"),
                             print("Running downgrade ~p -> ~p", [ModuleName:get_current_rev(), ModuleName:get_prev_rev()]),
-                            ModuleName:down(),
+                            ok = run_revision(down, RevId, ModuleName),
                             update_head(ModuleName:get_prev_rev())
                         end,
                         SubList
@@ -172,6 +205,116 @@ apply_downgrades(DownNum) ->
                     print("all downgrades successfully applied.", [])
             end
     end.
+
+%%
+%% Functions related to run observability
+%%
+
+-spec run_revision(
+    Direction :: up | down,
+    RevId :: atom(),
+    ModuleName :: module()
+) -> ok.
+run_revision(Direction, RevId, ModuleName) ->
+    Args = #{schema_name => legacy, schema_instance => legacy},
+    AttemptTs = erlang:system_time(microsecond),
+    StartedAt = get_current_time(),
+    ok = write_run_log(RevId, Args, Direction, running, AttemptTs, StartedAt, undefined, undefined, undefined),
+    notify_observer(on_revision_start, Args, [RevId]),
+    StartMs = erlang:monotonic_time(millisecond),
+    try
+        ModuleName:up(),
+        FinishMs = erlang:monotonic_time(millisecond) - StartMs,
+        ok = write_run_log(RevId, Args, Direction, ok, AttemptTs, StartedAt, get_current_time(), undefined, undefined),
+        notify_observer(on_revision_ok, Args, [RevId, FinishMs]),
+        ok
+    catch
+        Class:Reason:Stack ->
+            FailMs = erlang:monotonic_time(millisecond) - StartMs,
+            StackTrace = format_stacktrace(Stack),
+            ok = write_run_log(
+                RevId, Args, Direction, failed, AttemptTs, StartedAt, get_current_time(), {Class, Reason}, StackTrace
+            ),
+            notify_observer(on_revision_failed, Args, [RevId, FailMs, {Class, Reason, Stack}]),
+            erlang:raise(Class, Reason, Stack)
+    end.
+
+-spec write_run_log(
+    RevId :: atom(),
+    Args :: maps:map(),
+    Direction :: up | down,
+    Status :: running | ok | failed,
+    AttemptTs :: integer(),
+    StartedAt :: calendar:local_time(),
+    FinishedAt :: calendar:local_time() | undefined,
+    ErrorReason :: {Class :: atom(), Reason :: any()} | undefined,
+    StackTrace :: binary() | undefined
+) -> ok.
+write_run_log(RevId, _Args, Direction, Status, AttemptTs, StartedAt, FinishedAt, ErrorReason, StackTrace) ->
+    Tag = application:get_env(mnesia_migrate, run_tag, legacy),
+    Id = {Tag, RevId, AttemptTs},
+    Rec = #db_migration_runs{
+        id = Id,
+        tag = Tag,
+        migration_name = RevId,
+        direction = Direction,
+        status = Status,
+        started_at = StartedAt,
+        finished_at = FinishedAt,
+        error_reason = ErrorReason,
+        stacktrace = StackTrace,
+        node = node()
+    },
+    {atomic, ok} = mnesia:transaction(fun() -> mnesia:write(?RUN_TABLE, Rec, write) end),
+    ok.
+
+-spec notify_observer(Callback :: atom(), Args :: maps:map(), Payload :: list()) -> ok.
+notify_observer(Callback, Args, Payload) ->
+    Schema = maps:get(schema_name, Args, undefined),
+    Instance = maps:get(schema_instance, Args, undefined),
+    case application:get_env(mnesia_migrate, run_log_observer, undefined) of
+        undefined ->
+            ok;
+        Observer ->
+            CallArgs = [Schema, Instance | Payload] ++ [Args],
+            _ = try apply(Observer, Callback, CallArgs)
+                catch _:_ -> ok
+            end,
+            ok
+    end.
+
+-spec format_stacktrace(Stack :: list()) -> binary().
+format_stacktrace(Stack) ->
+    iolist_to_binary(io_lib:format("~p", [Stack])).
+
+-spec get_last_migration_run() -> #db_migration_runs{} | none.
+get_last_migration_run() ->
+    Rows = mnesia:dirty_match_object(?RUN_TABLE, #db_migration_runs{tag = run_tag(), _ = '_'}),
+    case Rows of
+        [] ->
+            none;
+        _ ->
+            lists:foldl(
+                fun(Run, Last) ->
+                    case attempt_ts(Run) > attempt_ts(Last) of
+                        true -> Run;
+                        false -> Last
+                    end
+                end,
+                hd(Rows),
+                tl(Rows)
+            )
+    end.
+
+-spec get_run_log() -> list(#db_migration_runs{}).
+get_run_log() ->
+    mnesia:dirty_match_object(?RUN_TABLE, #db_migration_runs{tag = run_tag(), _ = '_'}).
+
+run_tag() ->
+    application:get_env(mnesia_migrate, run_tag, legacy).
+
+attempt_ts(#db_migration_runs{id = {_Tag, _RevId, AttemptTs}}) ->
+    AttemptTs.
 
 append_revision_tree(List1, RevId) ->
     case get_next_revision(RevId) of
